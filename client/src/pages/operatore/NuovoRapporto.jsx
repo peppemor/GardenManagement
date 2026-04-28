@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../../components/api";
-
-const TEMPLATE_BASE_TITOLO = "Template Base";
+import { Button, Modal } from "../../components/UI";
 
 export default function NuovoRapporto() {
   const { id, bozzaId } = useParams();
   const navigate = useNavigate();
   const isEditBozza = Boolean(bozzaId);
+  const clienteEditabile = !id && !isEditBozza;
 
-  const [cliente, setCliente] = useState(null);
+  const [clienti, setClienti] = useState([]);
   const [clienteId, setClienteId] = useState(id ? Number(id) : null);
   const [tipiIntervento, setTipiIntervento] = useState([]);
   const [tipiManutenzione, setTipiManutenzione] = useState([]);
@@ -18,6 +18,74 @@ export default function NuovoRapporto() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [canLeave, setCanLeave] = useState(false);
+  const [modal, setModal] = useState(null);
+
+  const campiObbligatori = [
+    "Cliente",
+    "Data di Intervento",
+    "Ora Inizio Intervento",
+    "Ora Fine Intervento",
+    "Tipo di Manutenzione",
+    "Tipo di Intervento"
+  ];
+
+  const campiExtraObbligatori = campiExtra
+    .filter((campo) => campo.obbligatorio === 1 || campo.obbligatorio === true)
+    .map((campo) => campo.nome);
+  function isRequiredFieldValid(campo) {
+    const value = String(datiCompilati[campo] || "").trim();
+    if (!value) return false;
+
+    if (campo === "Data di Intervento") {
+      if (value.toLowerCase() === "dd/mm/yyyy" || value === "__/__/____") return false;
+      return /^\d{4}-\d{2}-\d{2}$/.test(value);
+    }
+
+    return true;
+  }
+
+  const canSottometti = [...campiObbligatori, ...campiExtraObbligatori].every((campo) => isRequiredFieldValid(campo));
+
+  useEffect(() => {
+    if (canLeave) return;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    // Keep one history step to prevent accidental browser back while editing.
+    window.history.pushState(null, "", window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, "", window.location.href);
+      setError("Usa il tasto Indietro della pagina per uscire senza perdere le modifiche.");
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [canLeave]);
+
+  function navigateUnlocked(path) {
+    setCanLeave(true);
+    navigate(path);
+  }
+
+  function showSuccessAndNavigate(message, path) {
+    setModal({
+      title: "Operazione Completata",
+      message,
+      onClose: () => {
+        setModal(null);
+        navigateUnlocked(path);
+      }
+    });
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -28,24 +96,39 @@ export default function NuovoRapporto() {
       apiFetch("/campi-template"),
       isEditBozza ? apiFetch("/rapporti?status=bozza") : Promise.resolve(null)
     ])
-      .then(([clienti, tipiInt, tipiMan, campiCfg, bozze]) => {
+      .then(([clientiData, tipiInt, tipiMan, campiCfg, bozze]) => {
+        setClienti(clientiData);
         setTipiIntervento(tipiInt.map((t) => t.nome));
         setTipiManutenzione(tipiMan.map((t) => t.nome));
         setCampiExtra(campiCfg.filter((item) => item.is_default !== 1 && item.attivo === 1));
 
         let targetClienteId = id ? Number(id) : null;
+        let initialDatiCompilati = {};
 
         if (isEditBozza) {
           const bozza = (bozze || []).find((r) => r.id === Number(bozzaId));
           if (!bozza) throw new Error("Bozza non trovata");
           targetClienteId = bozza.cliente_id;
-          setDatiCompilati(bozza.dati_compilati || {});
+          initialDatiCompilati = bozza.dati_compilati || {};
         }
 
-        const trovato = clienti.find((c) => c.id === targetClienteId);
-        if (!trovato) throw new Error("Cliente non trovato");
-        setCliente(trovato);
-        setClienteId(targetClienteId);
+        if (targetClienteId) {
+          const trovato = clientiData.find((c) => c.id === targetClienteId);
+          if (!trovato) throw new Error("Cliente non trovato");
+
+          setClienteId(targetClienteId);
+          setDatiCompilati({
+            ...initialDatiCompilati,
+            Cliente: initialDatiCompilati.Cliente || trovato.nome
+          });
+        } else {
+          // Da "I miei rapporti": nessun cliente pre-selezionato, mostra placeholder.
+          setClienteId(null);
+          setDatiCompilati({
+            ...initialDatiCompilati,
+            Cliente: initialDatiCompilati.Cliente || ""
+          });
+        }
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -56,6 +139,16 @@ export default function NuovoRapporto() {
   }
 
   async function save(sottometti = false) {
+    if (!clienteId) {
+      setError("Seleziona un cliente prima di salvare il rapporto.");
+      return;
+    }
+
+    if (sottometti && !canSottometti) {
+      setError("Compila tutti i campi obbligatori prima di sottomettere il rapporto.");
+      return;
+    }
+
     setSaving(true);
     setError("");
 
@@ -68,11 +161,12 @@ export default function NuovoRapporto() {
 
         if (sottometti) {
           await apiFetch(`/rapporti/${bozzaId}/sottometti`, { method: "PATCH" });
-          alert("Rapporto sottomesso all'admin per approvazione!");
-          navigate(`/operatore/clienti/${clienteId}`);
+          showSuccessAndNavigate(
+            "Rapporto sottomesso all'admin per approvazione!",
+            id ? `/operatore/clienti/${clienteId}` : "/operatore/richieste"
+          );
         } else {
-          alert("Bozza aggiornata!");
-          navigate("/operatore/bozze");
+          showSuccessAndNavigate("Bozza aggiornata!", "/operatore/bozze");
         }
       } else {
         const payload = {
@@ -87,11 +181,12 @@ export default function NuovoRapporto() {
 
         if (sottometti) {
           await apiFetch(`/rapporti/${result.id}/sottometti`, { method: "PATCH" });
-          alert("Rapporto sottomesso all'admin per approvazione!");
-          navigate(`/operatore/clienti/${clienteId}`);
+          showSuccessAndNavigate(
+            "Rapporto sottomesso all'admin per approvazione!",
+            id ? `/operatore/clienti/${clienteId}` : "/operatore/richieste"
+          );
         } else {
-          alert("Rapporto salvato in bozza!");
-          navigate("/operatore/bozze");
+          showSuccessAndNavigate("Rapporto salvato in bozza!", "/operatore/bozze");
         }
       }
     } catch (err) {
@@ -105,6 +200,7 @@ export default function NuovoRapporto() {
 
   function renderExtraField(campo) {
     const value = datiCompilati[campo.nome] || "";
+    const isCampoObbligatorio = campo.obbligatorio === 1 || campo.obbligatorio === true;
 
     if (campo.tipo === "textarea") {
       return (
@@ -112,6 +208,7 @@ export default function NuovoRapporto() {
           rows="3"
           value={value}
           onChange={(e) => updateField(campo.nome, e.target.value)}
+          required={isCampoObbligatorio}
           style={inputStyle}
         />
       );
@@ -122,6 +219,7 @@ export default function NuovoRapporto() {
         type={campo.tipo || "text"}
         value={value}
         onChange={(e) => updateField(campo.nome, e.target.value)}
+        required={isCampoObbligatorio}
         style={inputStyle}
       />
     );
@@ -141,16 +239,23 @@ export default function NuovoRapporto() {
     return (
       <section>
         <h2>Nuovo Rapporto</h2>
-        <p style={{ color: "#666" }}>Caricamento template base...</p>
+        <p style={{ color: "#666" }}>Caricamento modulo...</p>
       </section>
     );
   }
 
-  if (!cliente) {
+  const clienteSelezionato = clienti.find((c) => c.id === Number(clienteId));
+  const exitPath = isEditBozza
+    ? "/operatore/bozze"
+    : id
+      ? `/operatore/clienti/${clienteId}`
+      : "/operatore/richieste";
+
+  if (!clienteSelezionato && !clienteEditabile) {
     return (
       <section>
         <h2>Nuovo Rapporto</h2>
-        <p className="error">{error || "Cliente non trovato"}</p>
+        <p className="error">{error || "Nessun cliente disponibile"}</p>
       </section>
     );
   }
@@ -159,13 +264,60 @@ export default function NuovoRapporto() {
     <section className="report-form-shell">
       <h2>{isEditBozza ? "Modifica Bozza Rapporto" : "Nuovo Rapporto"}</h2>
       <p style={{ marginBottom: "20px", color: "#666" }}>
-        <strong>Cliente:</strong> {cliente.nome}
+        <strong>Cliente:</strong> {clienteSelezionato ? clienteSelezionato.nome : "Seleziona dal menu"}
       </p>
 
       <form className="card form-grid report-form-card" onSubmit={(e) => e.preventDefault()}>
-        <h3>{isEditBozza ? "Continua modifica bozza" : `Compila Modulo: ${TEMPLATE_BASE_TITOLO}`}</h3>
+        <div style={{ display: "flex", justifyContent: "flex-end", width: "100%" }}>
+          <button
+            type="button"
+            aria-label="Chiudi form"
+            title="Chiudi"
+            onClick={() => navigateUnlocked(exitPath)}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "#b00020",
+              cursor: "pointer",
+              fontSize: "20px",
+              lineHeight: 1,
+              fontWeight: 700,
+              padding: "0 4px",
+              marginLeft: "auto",
+              width: "auto",
+              flexShrink: 0
+            }}
+          >
+            X
+          </button>
+        </div>
 
         <div className="report-fields-grid">
+          {fieldRow(
+            "Cliente",
+            true,
+            <select
+              value={clienteId || ""}
+              onChange={(e) => {
+                const nextId = Number(e.target.value);
+                const nextCliente = clienti.find((c) => c.id === nextId);
+                setClienteId(nextId);
+                updateField("Cliente", nextCliente ? nextCliente.nome : "");
+              }}
+              required
+              disabled={!clienteEditabile}
+              style={inputStyle}
+            >
+              <option value="">-- Seleziona cliente --</option>
+              {clienti.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>,
+            "field-span-2"
+          )}
+
           <div className="report-field-block field-span-2">
             <label style={{ display: "block", marginBottom: "6px", fontWeight: 500 }}>
               Data e Orario Intervento <span style={{ color: "red" }}> *</span>
@@ -182,7 +334,9 @@ export default function NuovoRapporto() {
                 />
               </div>
               <div>
-                <label style={{ display: "block", marginBottom: "4px", fontSize: "12px", color: "#4b6659" }}>Inizio</label>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "12px", color: "#4b6659" }}>
+                  Inizio <span style={{ color: "red" }}>*</span>
+                </label>
                 <input
                   type="time"
                   value={datiCompilati["Ora Inizio Intervento"] || ""}
@@ -192,7 +346,9 @@ export default function NuovoRapporto() {
                 />
               </div>
               <div>
-                <label style={{ display: "block", marginBottom: "4px", fontSize: "12px", color: "#4b6659" }}>Fine</label>
+                <label style={{ display: "block", marginBottom: "4px", fontSize: "12px", color: "#4b6659" }}>
+                  Fine <span style={{ color: "red" }}>*</span>
+                </label>
                 <input
                   type="time"
                   value={datiCompilati["Ora Fine Intervento"] || ""}
@@ -298,6 +454,7 @@ export default function NuovoRapporto() {
                 <div key={campo.id} className="report-field-block">
                   <label style={{ display: "block", marginBottom: "5px", fontWeight: 500 }}>
                     {campo.nome}
+                    {(campo.obbligatorio === 1 || campo.obbligatorio === true) && <span style={{ color: "red" }}> *</span>}
                   </label>
                   {renderExtraField(campo)}
                 </div>
@@ -332,22 +489,28 @@ export default function NuovoRapporto() {
         {error && <p className="error">{error}</p>}
 
         <div className="inline-actions" style={{ marginTop: "20px" }}>
-          <button type="button" onClick={() => save(false)} className="secondary-button" disabled={saving}>
+          <Button variant="secondary" type="button" onClick={() => save(false)} disabled={saving}>
             {saving ? "Salvataggio..." : "Salva in Bozza"}
-          </button>
-          <button
-            type="button"
-            onClick={() => save(true)}
-            disabled={saving}
-            style={{ backgroundColor: "#28a745", color: "white", border: "none" }}
-          >
+          </Button>
+          <Button variant="primary" type="button" onClick={() => save(true)} disabled={saving || !canSottometti}>
             {saving ? "Invio..." : "Sottometti per Approvazione"}
-          </button>
-          <button type="button" onClick={() => navigate(isEditBozza ? "/operatore/bozze" : `/operatore/clienti/${clienteId}`)} className="secondary-button">
+          </Button>
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() => navigateUnlocked(exitPath)}
+          >
             Indietro
-          </button>
+          </Button>
         </div>
       </form>
+
+      <Modal
+        isOpen={Boolean(modal)}
+        title={modal?.title}
+        message={modal?.message}
+        onClose={modal?.onClose || (() => setModal(null))}
+      />
     </section>
   );
 }

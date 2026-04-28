@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../../components/api";
+import { KPICard, Card } from "../../components/UI";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ clienti: 0, operatori: 0, rapporti: 0, template: 0 });
@@ -27,17 +28,17 @@ export default function Dashboard() {
     <section>
       <h2>Dashboard Admin</h2>
       <div className="kpi-grid">
-        <article className="card"><h3>Clienti</h3><p>{stats.clienti}</p></article>
-        <article className="card"><h3>Operatori</h3><p>{stats.operatori}</p></article>
-        <article className="card"><h3>Rapporti</h3><p>{stats.rapporti}</p></article>
-        <article className="card"><h3>Template</h3><p>{stats.template}</p></article>
+        <KPICard title="Clienti" value={stats.clienti} />
+        <KPICard title="Operatori" value={stats.operatori} />
+        <KPICard title="Rapporti" value={stats.rapporti} />
+        <KPICard title="Template" value={stats.template} />
       </div>
-      <div className="card action-grid">
+      <Card className="action-grid">
         <Link className="action-link" to="/admin/clienti">Gestisci clienti</Link>
         <Link className="action-link" to="/admin/operatori">Gestisci operatori</Link>
         <Link className="action-link" to="/admin/rapporti">Vedi rapporti</Link>
         <Link className="action-link" to="/admin/template">Gestisci template</Link>        
-      </div>
+      </Card>
     </section>
   );
 }

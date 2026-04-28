@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { apiFetch } from "../../components/api";
+import { useParams, useNavigate } from "react-router-dom";
+import { apiFetch, getAuth } from "../../components/api";
+import { Card, StatusPill, InfoSection, RapportoCard, Button } from "../../components/UI";
 
 export default function ClienteDettaglio() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [cliente, setCliente] = useState(null);
   const [rapporti, setRapporti] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
@@ -11,7 +13,28 @@ export default function ClienteDettaglio() {
   useEffect(() => {
     apiFetch(`/clienti/${id}`).then(setCliente).catch(() => {});
     apiFetch(`/rapporti?cliente=${id}`).then((data) => {
-      const visibili = data.filter((r) => r.status === "approvato" || r.status === "in_attesa");
+      const oggi = new Date();
+      oggi.setHours(0, 0, 0, 0);
+      const operatoreId = getAuth()?.user?.id;
+
+      const visibili = data.filter((r) => {
+        // Rapporti approvati: visibili a tutti, solo quelli di oggi
+        if (r.status === "approvato") {
+          const dataRapporto = new Date(r.created_at);
+          dataRapporto.setHours(0, 0, 0, 0);
+          return dataRapporto.getTime() === oggi.getTime();
+        }
+
+        // Rapporti in_attesa: visibili solo all'operatore che li ha creati, solo quelli di oggi
+        if (r.status === "in_attesa") {
+          if (r.operatore_id !== operatoreId) return false;
+          const dataRapporto = new Date(r.created_at);
+          dataRapporto.setHours(0, 0, 0, 0);
+          return dataRapporto.getTime() === oggi.getTime();
+        }
+
+        return false;
+      });
       setRapporti(visibili);
     }).catch(() => {});
   }, [id]);
@@ -20,23 +43,27 @@ export default function ClienteDettaglio() {
 
   return (
     <section className="cliente-dettaglio-shell">
-      <article className="card cliente-info-card">
+      <Card className="cliente-info-card">
         <h2>{cliente.nome}</h2>
-        <p className="info">Telefono: {cliente.telefono || "-"}</p>
-        <p className="info">Indirizzo: {cliente.indirizzo || "-"}</p>
-        {cliente.note && <p className="info">Note: {cliente.note}</p>}
-      </article>
+        <InfoSection label="Telefono" value={cliente.telefono} />
+        <InfoSection label="Indirizzo" value={cliente.indirizzo} />
+        {cliente.note && <InfoSection label="Note" value={cliente.note} />}
+      </Card>
 
       <div className="cliente-dettaglio-actions">
-        <Link to={`/operatore/clienti/${id}/nuovo-rapporto`} className="secondary-button" style={{ marginTop: "15px" }}>
+        <Button
+          variant="primary"
+          type="button"
+          onClick={() => navigate(`/operatore/clienti/${id}/nuovo-rapporto`)}
+        >
           + Nuovo Rapporto
-        </Link>
+        </Button>
       </div>
 
-      <article className="card" style={{ marginTop: "20px" }}>
+      <Card style={{ marginTop: "20px" }}>
         <h3>Rapporti Cliente</h3>
         <p className="info" style={{ marginTop: "4px" }}>
-          Mostrati: approvati e in attesa di approvazione.
+          Mostrati: rapporti approvati e in attesa di approvazione di oggi.
         </p>
         
         {rapporti.length === 0 ? (
@@ -44,49 +71,19 @@ export default function ClienteDettaglio() {
         ) : (
           <div className="rapporti-list">
             {rapporti.map((r) => (
-              <div
+              <RapportoCard
                 key={r.id}
-                className="rapporto-item"
-                onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
-              >
-                <div className="rapporto-item-header">
-                  <div>
-                    <p style={{ margin: "0 0 4px 0", fontWeight: "500" }}>
-                      {r.template_titolo || "Rapporto"}
-                    </p>
-                    <small style={{ color: "#666" }}>
-                      Operatore: {r.operatore_nome} {r.operatore_cognome} • {new Date(r.created_at).toLocaleDateString("it-IT")}
-                    </small>
-                  </div>
-                  <span className={`status-pill ${r.status === "approvato" ? "approved" : "pending"}`}>
-                    {r.status === "approvato" ? "Approvato" : "In attesa"}
-                  </span>
-                  <span style={{ fontSize: "18px", color: "#666" }}>
-                    {expandedId === r.id ? "▼" : "▶"}
-                  </span>
-                </div>
-
-                {expandedId === r.id && (
-                  <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #e0e0e0" }}>
-                    <h4 style={{ marginBottom: "8px" }}>Dati Intervento</h4>
-                    {Object.keys(r.dati_compilati || {}).length === 0 ? (
-                      <p style={{ fontSize: "12px", color: "#666" }}>Nessun dato disponibile</p>
-                    ) : (
-                      <div style={{ fontSize: "13px" }}>
-                        {Object.entries(r.dati_compilati || {}).map(([key, value]) => (
-                          <p key={key} style={{ marginBottom: "6px" }}>
-                            <strong>{key}:</strong> {String(value)}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                rapporto={r}
+                isExpanded={expandedId === r.id}
+                onToggleExpand={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                onVisualizza={() => navigate(`/operatore/rapporti/${r.id}`)}
+                showClienteNome={false}
+                layout="list"
+              />
             ))}
           </div>
         )}
-      </article>
+      </Card>
     </section>
   );
 }

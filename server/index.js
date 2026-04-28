@@ -12,6 +12,7 @@ const operatoriRoutes = require("./routes/operatori");
 const tipiInterventoRoutes = require("./routes/tipiIntervento");
 const tipiManutenzioneRoutes = require("./routes/tipiManutenzione");
 const campiTemplateRoutes = require("./routes/campiTemplate");
+const notificheRoutes = require("./routes/notifiche");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -35,6 +36,7 @@ app.use("/api/operatori", operatoriRoutes);
 app.use("/api/tipi-intervento", tipiInterventoRoutes);
 app.use("/api/tipi-manutenzione", tipiManutenzioneRoutes);
 app.use("/api/campi-template", campiTemplateRoutes);
+app.use("/api/notifiche", notificheRoutes);
 
 initDb()
   .then(() => {

@@ -1,16 +1,34 @@
-import { useEffect, useState } from "react";
-import { apiFetch } from "../../components/api";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiFetch, getAuth } from "../../components/api";
+import { RapportoCard, Modal } from "../../components/UI";
+import { broadcastNotificheChanged } from "../../hooks/useNotifiche";
 
 export default function Rapporti() {
+  const navigate = useNavigate();
+  const auth = getAuth();
   const [rows, setRows] = useState([]);
-  const [selectedStatus, setSelectedStatus] = useState("in_attesa");
+  const [selectedStatus, setSelectedStatus] = useState("tutti");
+  const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [error, setError] = useState("");
+  const [modal, setModal] = useState(null);
+  const [rifiutoRapportoId, setRifiutoRapportoId] = useState(null);
+  const [commentoRifiuto, setCommentoRifiuto] = useState("");
+  const commentoRifiutoRef = useRef("");
+  const commentoTextareaRef = useRef(null);
 
   async function load() {
     try {
       const data = await apiFetch("/rapporti");
-      setRows(data);
+      const nonBozze = data.filter((r) => r.status !== "bozza");
+      setRows(nonBozze);
+      // Mantieni filtro coerente con lo stato pending.
+      if (nonBozze.some((r) => r.status === "in_attesa")) {
+        setSelectedStatus("in_attesa");
+      } else {
+        setSelectedStatus("tutti");
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -18,12 +36,36 @@ export default function Rapporti() {
 
   useEffect(() => {
     load();
+    // Apertura pagina admin rapporti: segna notifiche come lette subito.
+    if (auth?.user?.ruolo === "admin") {
+      apiFetch("/notifiche/leggi-tutte", { method: "PATCH" })
+        .then(() => broadcastNotificheChanged())
+        .catch(() => {});
+    }
   }, []);
 
-  const filtered = rows.filter(r => {
-    if (selectedStatus === "in_attesa") return r.status === "in_attesa";
-    if (selectedStatus === "approvato") return r.status === "approvato";
-    return true;
+  const query = search.trim().toLowerCase();
+
+  const filtered = rows.filter((r) => {
+    const statusMatch =
+      selectedStatus === "tutti"
+        ? true
+        : r.status === selectedStatus;
+
+    if (!statusMatch) return false;
+    if (!query) return true;
+
+    const searchable = [
+      r.cliente_nome,
+      r.operatore_nome,
+      r.operatore_cognome,
+      r.template_titolo
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return searchable.includes(query);
   });
 
   async function approva(id) {
@@ -31,22 +73,31 @@ export default function Rapporti() {
       await apiFetch(`/rapporti/${id}/approva`, { method: "PATCH" });
       await load();
     } catch (err) {
-      alert("Errore: " + err.message);
+      setModal({ title: "Errore", message: `Errore: ${err.message}` });
     }
   }
 
-  async function rifiuta(id) {
-    if (!confirm("Rifiutare questo rapporto? Tornerà a bozza.")) return;
+  async function confermaRifiuto(id, commento = "") {
     try {
-      await apiFetch(`/rapporti/${id}/rifiuta`, { method: "PATCH" });
+      await apiFetch(`/rapporti/${id}/rifiuta`, {
+        method: "PATCH",
+        body: JSON.stringify({ commento })
+      });
       await load();
     } catch (err) {
-      alert("Errore: " + err.message);
+      setModal({ title: "Errore", message: `Errore: ${err.message}` });
     }
+  }
+
+  function rifiuta(id) {
+    setCommentoRifiuto("");
+    commentoRifiutoRef.current = "";
+    setRifiutoRapportoId(id);
   }
 
   const inAttesa = rows.filter(r => r.status === "in_attesa");
   const approvati = rows.filter(r => r.status === "approvato");
+  const rifiutati = rows.filter(r => r.status === "rifiutato");
 
   return (
     <section>
@@ -54,98 +105,100 @@ export default function Rapporti() {
 
       {error && <p className="error">{error}</p>}
 
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-        <button
-          className={selectedStatus === "in_attesa" ? "active-btn" : "secondary-button"}
-          onClick={() => setSelectedStatus("in_attesa")}
+      <div className="report-filters-row">
+        <input
+          className="operator-search-input"
+          type="search"
+          placeholder="Cerca per cliente, operatore o template"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Ricerca rapporti"
+        />
+        <select
+          className="report-status-select"
+          value={selectedStatus}
+          onChange={(e) => setSelectedStatus(e.target.value)}
+          aria-label="Filtro stato rapporti"
         >
-          In Attesa ({inAttesa.length})
-        </button>
-        <button
-          className={selectedStatus === "approvato" ? "active-btn" : "secondary-button"}
-          onClick={() => setSelectedStatus("approvato")}
-        >
-          Approvati ({approvati.length})
-        </button>
+          <option value="tutti">Tutti ({rows.length})</option>
+          <option value="in_attesa">In Attesa ({inAttesa.length})</option>
+          <option value="approvato">Approvati ({approvati.length})</option>
+          <option value="rifiutato">Rifiutati ({rifiutati.length})</option>
+        </select>
       </div>
 
       {filtered.length === 0 ? (
-        <p style={{ color: "#666" }}>Nessun rapporto in questa categoria</p>
+        <p style={{ color: "#666" }}>Nessun rapporto trovato con i filtri selezionati</p>
       ) : (
         <div className="clients-grid">
           {filtered.map((r) => (
-            <article className="card client-card" key={r.id}>
-              <div className="card-header">
-                <h3>{r.cliente_nome}</h3>
-                <button
-                  className="menu-button"
-                  onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
-                >
-                  {expandedId === r.id ? "▼" : "▶"}
-                </button>
-              </div>
-
-              <p className="info">
-                <strong>Operatore:</strong> {r.operatore_nome} {r.operatore_cognome}
-              </p>
-              <p className="info">
-                <strong>Template:</strong> {r.template_titolo || "N/A"}
-              </p>
-              <p className="info">
-                <strong>Data:</strong> {r.created_at ? new Date(r.created_at).toLocaleDateString("it-IT") : "-"}
-              </p>
-              <p className="info">
-                <strong>Status:</strong>{" "}
-                <span
-                  style={{
-                    padding: "2px 8px",
-                    borderRadius: "4px",
-                    fontSize: "12px",
-                    backgroundColor: r.status === "in_attesa" ? "#fff3cd" : "#d4edda",
-                    color: r.status === "in_attesa" ? "#856404" : "#155724"
-                  }}
-                >
-                  {r.status === "in_attesa" ? "In Attesa" : "Approvato"}
-                </span>
-              </p>
-
-              {expandedId === r.id && (
-                <div style={{ marginTop: "15px", paddingTop: "15px", borderTop: "1px solid #ddd" }}>
-                  <h4>Dati Compilati</h4>
-                  {Object.keys(r.dati_compilati || {}).length === 0 ? (
-                    <p style={{ color: "#666", fontSize: "12px" }}>Nessun dato compilato</p>
-                  ) : (
-                    <div style={{ fontSize: "12px" }}>
-                      {Object.entries(r.dati_compilati || {}).map(([key, value]) => (
-                        <p key={key} style={{ marginBottom: "8px" }}>
-                          <strong>{key}:</strong> {String(value)}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-
-                  {r.status === "in_attesa" && (
-                    <div className="inline-actions" style={{ marginTop: "15px" }}>
-                      <button
-                        onClick={() => approva(r.id)}
-                        style={{ backgroundColor: "#28a745", color: "white", border: "none", padding: "8px 12px", borderRadius: "4px", cursor: "pointer" }}
-                      >
-                        Approva
-                      </button>
-                      <button
-                        onClick={() => rifiuta(r.id)}
-                        style={{ backgroundColor: "#dc3545", color: "white", border: "none", padding: "8px 12px", borderRadius: "4px", cursor: "pointer" }}
-                      >
-                        Rifiuta
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </article>
+            <RapportoCard
+              key={r.id}
+              rapporto={r}
+              isExpanded={expandedId === r.id}
+              onToggleExpand={() => setExpandedId(expandedId === r.id ? null : r.id)}
+              onVisualizza={() => navigate(`/admin/rapporti/${r.id}`)}
+              onApprovazione={() => approva(r.id)}
+              onRifiuto={() => rifiuta(r.id)}
+              showClienteNome={true}
+              layout="card"
+            />
           ))}
         </div>
       )}
+
+      <Modal
+        isOpen={Boolean(modal)}
+        title={modal?.title}
+        message={modal?.message}
+        actions={modal?.actions}
+        onClose={() => setModal(null)}
+      />
+
+      <Modal
+        isOpen={Boolean(rifiutoRapportoId)}
+        title="Conferma Rifiuto"
+        actions={[
+          { label: "Annulla", variant: "secondary", onClick: () => setRifiutoRapportoId(null) },
+          {
+            label: "Conferma",
+            variant: "danger",
+            onClick: async () => {
+              const commentoCorrente = commentoTextareaRef.current?.value || commentoRifiutoRef.current || "";
+              const targetId = rifiutoRapportoId;
+              setRifiutoRapportoId(null);
+              if (targetId) await confermaRifiuto(targetId, commentoCorrente);
+            }
+          }
+        ]}
+        onClose={() => setRifiutoRapportoId(null)}
+      >
+        <div>
+          <p className="modal-message" style={{ marginBottom: "10px" }}>
+            Rifiutare questo rapporto? Lo stato passerà a Rifiutato.
+          </p>
+          <label style={{ display: "block", fontSize: "13px", color: "#40574b", marginBottom: "6px" }}>
+            Commento (opzionale)
+          </label>
+          <textarea
+            ref={commentoTextareaRef}
+            rows="4"
+            value={commentoRifiuto}
+            onChange={(e) => {
+              setCommentoRifiuto(e.target.value);
+              commentoRifiutoRef.current = e.target.value;
+            }}
+            placeholder="Motivo del rifiuto..."
+            style={{
+              width: "100%",
+              border: "1px solid #cfe5d5",
+              borderRadius: "8px",
+              padding: "10px",
+              resize: "vertical"
+            }}
+          />
+        </div>
+      </Modal>
     </section>
   );
 }

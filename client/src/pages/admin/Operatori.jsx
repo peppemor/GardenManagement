@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../components/api";
+import { Card, Button, AddClientCard, InfoSection } from "../../components/UI";
 
 export default function Operatori() {
   const [operatori, setOperatori] = useState([]);
@@ -90,7 +91,40 @@ export default function Operatori() {
       <section>
         <h2>Operatori</h2>
         {editingId ? (
-          <form onSubmit={submit} className="card form-grid">
+          <Card className="form-grid">
+            <form onSubmit={submit} style={{ display: "contents" }}>
+              <input placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
+              <input placeholder="Cognome" value={form.cognome} onChange={(e) => setForm({ ...form, cognome: e.target.value })} />
+              <input placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required />
+              <input
+                type="password"
+                placeholder={editingId === "new" ? "Password" : "Nuova password (opzionale)"}
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                required={editingId === "new"}
+              />
+              {error ? <p className="error">{error}</p> : null}
+              <div className="inline-actions">
+                <Button variant="primary" type="submit">Salva Operatore</Button>
+                <Button variant="secondary" type="button" onClick={resetForm}>Annulla</Button>
+              </div>
+            </form>
+          </Card>
+        ) : (
+          <div className="clients-grid">
+            <AddClientCard onClick={() => startEdit({})} />
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h2>Operatori</h2>
+      {editingId ? (
+        <Card className="form-grid">
+          <form onSubmit={submit} style={{ display: "contents" }}>
             <input placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
             <input placeholder="Cognome" value={form.cognome} onChange={(e) => setForm({ ...form, cognome: e.target.value })} />
             <input placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required />
@@ -103,47 +137,15 @@ export default function Operatori() {
             />
             {error ? <p className="error">{error}</p> : null}
             <div className="inline-actions">
-              <button type="submit">Salva Operatore</button>
-              <button type="button" className="secondary-button" onClick={resetForm}>Annulla</button>
+              <Button variant="primary" type="submit">Salva Operatore</Button>
+              <Button variant="secondary" type="button" onClick={resetForm}>Annulla</Button>
             </div>
           </form>
-        ) : (
-          <div className="clients-grid">
-            <button className="card add-client-card" onClick={() => startEdit({})}>
-              <div className="add-icon">+</div>
-              <p>Aggiungi Operatore</p>
-            </button>
-          </div>
-        )}
-      </section>
-    );
-  }
-
-  return (
-    <section>
-      <h2>Operatori</h2>
-      {editingId ? (
-        <form onSubmit={submit} className="card form-grid">
-          <input placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
-          <input placeholder="Cognome" value={form.cognome} onChange={(e) => setForm({ ...form, cognome: e.target.value })} />
-          <input placeholder="Username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required />
-          <input
-            type="password"
-            placeholder={editingId === "new" ? "Password" : "Nuova password (opzionale)"}
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            required={editingId === "new"}
-          />
-          {error ? <p className="error">{error}</p> : null}
-          <div className="inline-actions">
-            <button type="submit">Salva Operatore</button>
-            <button type="button" className="secondary-button" onClick={resetForm}>Annulla</button>
-          </div>
-        </form>
+        </Card>
       ) : (
         <div className="clients-grid">
           {operatori.map((operatore) => (
-            <article className="card client-card" key={operatore.id}>
+            <Card className="client-card" key={operatore.id}>
               <div className="card-header">
                 <h3>{`${operatore.nome || ''} ${operatore.cognome || ''}`.trim() || 'Operatore'}</h3>
                 <div className="menu-wrapper">
@@ -156,15 +158,12 @@ export default function Operatori() {
                   )}
                 </div>
               </div>
-              <p className="info">Username: {operatore.username}</p>
-              <p className="info">Ruolo: {operatore.ruolo}</p>
-            </article>
+              <InfoSection label="Username" value={operatore.username} />
+              <InfoSection label="Ruolo" value={operatore.ruolo} />
+            </Card>
           ))}
 
-          <button className="card add-client-card" onClick={() => startEdit({})}>
-            <div className="add-icon">+</div>
-            <p>Aggiungi Operatore</p>
-          </button>
+          <AddClientCard onClick={() => startEdit({})} />
         </div>
       )}
     </section>

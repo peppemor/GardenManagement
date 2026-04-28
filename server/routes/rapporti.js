@@ -4,7 +4,9 @@ const { authRequired, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 
+// ============================================
 // GET - Lista rapporti con filtri
+// ============================================
 router.get("/", authRequired, async (req, res) => {
   try {
     const { status, cliente } = req.query;
@@ -22,10 +24,16 @@ router.get("/", authRequired, async (req, res) => {
 
     // Regola visibilità operatori:
     // - bozze visibili solo all'operatore che le ha create
-    // - rapporti non in bozza visibili a tutti gli operatori
+    // - rifiutati visibili solo all'operatore che li ha creati
+    // - altri rapporti non in bozza visibili a tutti gli operatori
     if (req.user.ruolo === "operatore") {
-      query += ` AND (r.status != 'bozza' OR r.operatore_id = ?)`;
-      params.push(req.user.id);
+      if (status === "rifiutato") {
+        query += ` AND r.operatore_id = ?`;
+        params.push(req.user.id);
+      } else {
+        query += ` AND (r.status != 'bozza' OR r.operatore_id = ?)`;
+        params.push(req.user.id);
+      }
     }
 
     // Filtra per status se fornito
@@ -56,7 +64,9 @@ router.get("/", authRequired, async (req, res) => {
   }
 });
 
+// ============================================
 // POST - Crea nuovo rapporto in bozza
+// ============================================
 router.post("/", authRequired, async (req, res) => {
   try {
     const { cliente_id, template_id, dati_compilati } = req.body;
@@ -88,6 +98,139 @@ router.post("/", authRequired, async (req, res) => {
     return res.status(500).json({ message: "Errore creazione rapporto", error: error.message });
   }
 });
+
+// ============================================
+// ROTTE SPECIFICHE - Devono stare PRIMA delle rotte generiche
+// ============================================
+
+// PATCH - Operatore sottomette rapporto per approvazione
+router.patch("/:id/sottometti", authRequired, async (req, res) => {
+  try {
+    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+
+    if (!rapporto) {
+      return res.status(404).json({ message: "Rapporto non trovato" });
+    }
+
+    if (rapporto.operatore_id !== req.user.id && req.user.ruolo !== "admin") {
+      return res.status(403).json({ message: "Non hai permessi" });
+    }
+
+    if (rapporto.status !== "bozza") {
+      return res.status(400).json({ message: "Solo le bozze possono essere sottomesse" });
+    }
+
+    await run(
+      "UPDATE rapporti SET status = 'in_attesa', motivo_rifiuto = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [req.params.id]
+    );
+
+    // Notifica a tutti gli admin per nuovo rapporto in attesa
+    const admins = await all("SELECT id FROM utenti WHERE ruolo = 'admin'");
+    for (const admin of admins) {
+      await run(
+        "INSERT INTO notifiche (utente_id, tipo, rapporto_id) VALUES (?, 'in_attesa', ?)",
+        [admin.id, Number(req.params.id)]
+      );
+    }
+
+    const updated = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+    return res.json(updated);
+  } catch (error) {
+    return res.status(500).json({ message: "Errore sottomissione rapporto", error: error.message });
+  }
+});
+
+// PATCH - Admin approva rapporto
+router.patch("/:id/approva", authRequired, requireRole("admin"), async (req, res) => {
+  try {
+    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+
+    if (!rapporto) {
+      return res.status(404).json({ message: "Rapporto non trovato" });
+    }
+
+    if (rapporto.status !== "in_attesa") {
+      return res.status(400).json({ message: "Solo rapporti in attesa possono essere approvati" });
+    }
+
+    await run(
+      "UPDATE rapporti SET status = 'approvato', motivo_rifiuto = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [req.params.id]
+    );
+
+    // Notifica all'operatore
+    await run(
+      "INSERT INTO notifiche (utente_id, tipo, rapporto_id) VALUES (?, 'approvato', ?)",
+      [rapporto.operatore_id, rapporto.id]
+    );
+
+    const updated = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+    return res.json(updated);
+  } catch (error) {
+    return res.status(500).json({ message: "Errore approvazione rapporto", error: error.message });
+  }
+});
+
+// PATCH - Admin rifiuta rapporto
+router.patch("/:id/rifiuta", authRequired, requireRole("admin"), async (req, res) => {
+  try {
+    const commento = typeof req.body?.commento === "string" ? req.body.commento.trim() : "";
+    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+
+    if (!rapporto) {
+      return res.status(404).json({ message: "Rapporto non trovato" });
+    }
+
+    if (rapporto.status !== "in_attesa") {
+      return res.status(400).json({ message: "Solo rapporti in attesa possono essere rifiutati" });
+    }
+
+    await run(
+      "UPDATE rapporti SET status = 'rifiutato', motivo_rifiuto = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [commento || null, req.params.id]
+    );
+
+    // Notifica all'operatore
+    await run(
+      "INSERT INTO notifiche (utente_id, tipo, rapporto_id) VALUES (?, 'rifiutato', ?)",
+      [rapporto.operatore_id, rapporto.id]
+    );
+
+    const updated = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+    return res.json(updated);
+  } catch (error) {
+    return res.status(500).json({ message: "Errore rifiuto rapporto", error: error.message });
+  }
+});
+
+// DELETE - Elimina rapporto (solo bozze)
+router.delete("/:id", authRequired, async (req, res) => {
+  try {
+    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+
+    if (!rapporto) {
+      return res.status(404).json({ message: "Rapporto non trovato" });
+    }
+
+    if (rapporto.operatore_id !== req.user.id && req.user.ruolo !== "admin") {
+      return res.status(403).json({ message: "Non hai permessi" });
+    }
+
+    if (rapporto.status !== "bozza") {
+      return res.status(400).json({ message: "Solo le bozze possono essere eliminate" });
+    }
+
+    await run("DELETE FROM rapporti WHERE id = ?", [req.params.id]);
+    return res.json({ message: "Rapporto eliminato" });
+  } catch (error) {
+    return res.status(500).json({ message: "Errore eliminazione rapporto", error: error.message });
+  }
+});
+
+// ============================================
+// ROTTE GENERICHE - Devono stare DOPO le rotte specifiche
+// ============================================
 
 // PATCH - Aggiorna bozza rapporto
 router.patch("/:id", authRequired, async (req, res) => {
@@ -125,106 +268,39 @@ router.patch("/:id", authRequired, async (req, res) => {
   }
 });
 
-// PATCH - Operatore sottomette rapporto per approvazione
-router.patch("/:id/sottometti", authRequired, async (req, res) => {
+// GET - Rapporto singolo (DEVE stare ULTIMO)
+router.get("/:id", authRequired, async (req, res) => {
   try {
-    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
+    const rapporto = await get(`
+      SELECT r.*, c.nome AS cliente_nome, u.username AS operatore_username, 
+             u.nome AS operatore_nome, u.cognome AS operatore_cognome,
+             t.titolo AS template_titolo
+      FROM rapporti r
+      JOIN clienti c ON c.id = r.cliente_id
+      JOIN utenti u ON u.id = r.operatore_id
+      LEFT JOIN template t ON t.id = r.template_id
+      WHERE r.id = ?
+    `, [req.params.id]);
 
     if (!rapporto) {
       return res.status(404).json({ message: "Rapporto non trovato" });
     }
 
-    if (rapporto.operatore_id !== req.user.id && req.user.ruolo !== "admin") {
-      return res.status(403).json({ message: "Non hai permessi" });
+    // Regola visibilità operatori:
+    // - bozze visibili solo all'operatore che le ha create
+    // - rapporti non in bozza visibili a tutti gli operatori
+    if (req.user.ruolo === "operatore") {
+      if (rapporto.status === "bozza" && rapporto.operatore_id !== req.user.id) {
+        return res.status(403).json({ message: "Non hai permessi per visualizzare questo rapporto" });
+      }
     }
 
-    if (rapporto.status !== "bozza") {
-      return res.status(400).json({ message: "Solo le bozze possono essere sottomesse" });
-    }
-
-    await run(
-      "UPDATE rapporti SET status = 'in_attesa', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-      [req.params.id]
-    );
-
-    const updated = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
-    return res.json(updated);
+    return res.json({
+      ...rapporto,
+      dati_compilati: typeof rapporto.dati_compilati === 'string' ? JSON.parse(rapporto.dati_compilati || '{}') : rapporto.dati_compilati
+    });
   } catch (error) {
-    return res.status(500).json({ message: "Errore sottomissione rapporto", error: error.message });
-  }
-});
-
-// PATCH - Admin approva rapporto
-router.patch("/:id/approva", authRequired, requireRole("admin"), async (req, res) => {
-  try {
-    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
-
-    if (!rapporto) {
-      return res.status(404).json({ message: "Rapporto non trovato" });
-    }
-
-    if (rapporto.status !== "in_attesa") {
-      return res.status(400).json({ message: "Solo rapporti in attesa possono essere approvati" });
-    }
-
-    await run(
-      "UPDATE rapporti SET status = 'approvato', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-      [req.params.id]
-    );
-
-    const updated = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
-    return res.json(updated);
-  } catch (error) {
-    return res.status(500).json({ message: "Errore approvazione rapporto", error: error.message });
-  }
-});
-
-// PATCH - Admin rifiuta rapporto
-router.patch("/:id/rifiuta", authRequired, requireRole("admin"), async (req, res) => {
-  try {
-    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
-
-    if (!rapporto) {
-      return res.status(404).json({ message: "Rapporto non trovato" });
-    }
-
-    if (rapporto.status !== "in_attesa") {
-      return res.status(400).json({ message: "Solo rapporti in attesa possono essere rifiutati" });
-    }
-
-    await run(
-      "UPDATE rapporti SET status = 'bozza', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-      [req.params.id]
-    );
-
-    const updated = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
-    return res.json(updated);
-  } catch (error) {
-    return res.status(500).json({ message: "Errore rifiuto rapporto", error: error.message });
-  }
-});
-
-// DELETE - Elimina rapporto (solo bozze)
-router.delete("/:id", authRequired, async (req, res) => {
-  try {
-    const rapporto = await get("SELECT * FROM rapporti WHERE id = ?", [req.params.id]);
-
-    if (!rapporto) {
-      return res.status(404).json({ message: "Rapporto non trovato" });
-    }
-
-    if (rapporto.operatore_id !== req.user.id && req.user.ruolo !== "admin") {
-      return res.status(403).json({ message: "Non hai permessi" });
-    }
-
-    if (rapporto.status !== "bozza") {
-      return res.status(400).json({ message: "Solo le bozze possono essere eliminate" });
-    }
-
-    await run("DELETE FROM rapporti WHERE id = ?", [req.params.id]);
-    return res.json({ message: "Rapporto eliminato" });
-  } catch (error) {
-    return res.status(500).json({ message: "Errore eliminazione rapporto", error: error.message });
+    return res.status(500).json({ message: "Errore lettura rapporto", error: error.message });
   }
 });
 

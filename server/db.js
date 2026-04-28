@@ -139,6 +139,7 @@ async function initDb() {
     const hasStatus = rapportiCols.some(col => col.name === 'status');
     const hasComporati = rapportiCols.some(col => col.name === 'dati_compilati');
     const hasUpdatedAt = rapportiCols.some(col => col.name === 'updated_at');
+    const hasMotivoRifiuto = rapportiCols.some(col => col.name === 'motivo_rifiuto');
     
     if (!hasStatus) {
       await run("ALTER TABLE rapporti ADD COLUMN status TEXT NOT NULL DEFAULT 'bozza'");
@@ -151,6 +152,10 @@ async function initDb() {
     if (!hasUpdatedAt) {
       await run("ALTER TABLE rapporti ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP");
       console.log("Colonna 'updated_at' aggiunta a rapporti");
+    }
+    if (!hasMotivoRifiuto) {
+      await run("ALTER TABLE rapporti ADD COLUMN motivo_rifiuto TEXT");
+      console.log("Colonna 'motivo_rifiuto' aggiunta a rapporti");
     }
   } catch (err) {
     console.error("Errore migrazione rapporti:", err.message);
@@ -178,10 +183,23 @@ async function initDb() {
       nome TEXT NOT NULL UNIQUE,
       tipo TEXT NOT NULL CHECK(tipo IN ('text', 'textarea', 'number', 'date')),
       attivo INTEGER NOT NULL DEFAULT 1 CHECK(attivo IN (0, 1)),
+      obbligatorio INTEGER NOT NULL DEFAULT 0 CHECK(obbligatorio IN (0, 1)),
       is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Migration: aggiungi colonna obbligatorio se non esiste
+  try {
+    const campiTemplateCols = await all("PRAGMA table_info(campi_template)");
+    const hasObbligatorio = campiTemplateCols.some(col => col.name === 'obbligatorio');
+    if (!hasObbligatorio) {
+      await run("ALTER TABLE campi_template ADD COLUMN obbligatorio INTEGER NOT NULL DEFAULT 0 CHECK(obbligatorio IN (0, 1))");
+      console.log("Colonna 'obbligatorio' aggiunta a campi_template");
+    }
+  } catch (err) {
+    console.error("Errore migrazione campi_template:", err.message);
+  }
 
   // Inserisci valori di default per tipi_manutenzione se la tabella è vuota
   const countManutenzione = await get("SELECT COUNT(*) as n FROM tipi_manutenzione");
@@ -202,11 +220,24 @@ async function initDb() {
     const existing = await get("SELECT id FROM campi_template WHERE LOWER(nome) = LOWER(?)", [campo.nome]);
     if (!existing) {
       await run(
-        "INSERT INTO campi_template (nome, tipo, attivo, is_default) VALUES (?, ?, 1, 1)",
+        "INSERT INTO campi_template (nome, tipo, attivo, obbligatorio, is_default) VALUES (?, ?, 1, 0, 1)",
         [campo.nome, campo.tipo]
       );
     }
   }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS notifiche (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      utente_id INTEGER NOT NULL,
+      tipo TEXT NOT NULL,
+      rapporto_id INTEGER,
+      letto INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (utente_id) REFERENCES utenti(id),
+      FOREIGN KEY (rapporto_id) REFERENCES rapporti(id)
+    )
+  `);
 
   await ensureDefaultAdmin();
 }

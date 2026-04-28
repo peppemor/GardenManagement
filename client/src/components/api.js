@@ -67,9 +67,14 @@ export async function apiFetch(path, options = {}) {
     : await response.text();
 
   if (response.status === 401) {
-    clearAuth();
-    window.location.href = "/login?sessionExpired=1";
-    return;
+    // Session expired only makes sense for authenticated requests.
+    if (auth?.token) {
+      clearAuth();
+      window.location.href = "/login?sessionExpired=1";
+      return;
+    }
+
+    throw new Error(data?.message || "Credenziali non valide");
   }
 
   if (!response.ok) {

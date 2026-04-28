@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../components/api";
+import { Modal } from "../../components/UI";
 
 export default function TipiManutenzione() {
   const [tipi, setTipi] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const inputRef = useRef(null);
+  const [modal, setModal] = useState(null);
 
   async function load() {
     try {
@@ -42,8 +44,7 @@ export default function TipiManutenzione() {
     }
   }
 
-  async function remove(id, nome) {
-    if (!confirm(`Eliminare "${nome}"? Verrà rimosso dalla lista globale.`)) return;
+  async function remove(id) {
     setError("");
     try {
       await apiFetch(`/tipi-manutenzione/${id}`, { method: "DELETE" });
@@ -109,7 +110,23 @@ export default function TipiManutenzione() {
               >
                 <span style={{ fontWeight: 500, color: "#173426" }}>{tipo.nome}</span>
                 <button
-                  onClick={() => remove(tipo.id, tipo.nome)}
+                  onClick={() =>
+                    setModal({
+                      title: "Conferma Eliminazione",
+                      message: `Eliminare "${tipo.nome}"? Verrà rimosso dalla lista globale.`,
+                      actions: [
+                        { label: "Annulla", variant: "secondary", onClick: () => setModal(null) },
+                        {
+                          label: "Elimina",
+                          variant: "danger",
+                          onClick: async () => {
+                            setModal(null);
+                            await remove(tipo.id);
+                          }
+                        }
+                      ]
+                    })
+                  }
                   style={{
                     background: "none",
                     border: "1px solid #e0b0b0",
@@ -127,6 +144,14 @@ export default function TipiManutenzione() {
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={Boolean(modal)}
+        title={modal?.title}
+        message={modal?.message}
+        actions={modal?.actions}
+        onClose={() => setModal(null)}
+      />
     </section>
   );
 }

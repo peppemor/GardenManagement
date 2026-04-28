@@ -1,0 +1,12 @@
+// Esportazione centralizzata di tutti i componenti UI
+export { default as Card } from "./Card";
+export { default as KPICard } from "./KPICard";
+export { default as StatusPill } from "./StatusPill";
+export { default as Button } from "./Button";
+export { default as InfoSection } from "./InfoSection";
+export { default as ListItem } from "./ListItem";
+export { default as AddClientCard } from "./AddClientCard";
+export { default as RapportoViewer } from "./RapportoViewer";
+export { default as RapportoCard } from "./RapportoCard";
+export { default as Modal } from "./Modal";
+export { default as TemplatePreviewCard } from "./TemplatePreviewCard";

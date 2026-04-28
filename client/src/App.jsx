@@ -6,13 +6,15 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/admin/Dashboard";
 import Clienti from "./pages/admin/Clienti";
 import Operatori from "./pages/admin/Operatori";
-import Template from "./pages/admin/Template";
 import Rapporti from "./pages/admin/Rapporti";
 import Impostazioni from "./pages/admin/Impostazioni";
 import HomeOperatore from "./pages/operatore/Home";
 import BozzeOperatore from "./pages/operatore/Bozze";
+import RifiutatiOperatore from "./pages/operatore/Rifiutati";
+import LeRichiesteOperatore from "./pages/operatore/LeRichieste";
 import ClienteDettaglio from "./pages/operatore/ClienteDettaglio";
 import NuovoRapporto from "./pages/operatore/NuovoRapporto";
+import VisualizzaRapporto from "./pages/VisualizzaRapporto";
 import { getAuth, subscribeAuthChange } from "./components/api";
 
 function HomeRedirect() {
@@ -69,7 +71,7 @@ export default function App() {
             path="/admin/template"
             element={
               <ProtectedRoute roles={["admin"]}>
-                <Template />
+                <Navigate to="/admin/impostazioni" replace />
               </ProtectedRoute>
             }
           />
@@ -78,6 +80,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={["admin"]}>
                 <Rapporti />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/rapporti/:id"
+            element={
+              <ProtectedRoute roles={["admin"]}>
+                <VisualizzaRapporto />
               </ProtectedRoute>
             }
           />
@@ -107,6 +117,30 @@ export default function App() {
             }
           />
           <Route
+            path="/operatore/rifiutati"
+            element={
+              <ProtectedRoute roles={["operatore"]}>
+                <RifiutatiOperatore />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/operatore/richieste"
+            element={
+              <ProtectedRoute roles={["operatore"]}>
+                <LeRichiesteOperatore />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/operatore/nuovo-rapporto"
+            element={
+              <ProtectedRoute roles={["operatore"]}>
+                <NuovoRapporto />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/operatore/clienti/:id"
             element={
               <ProtectedRoute roles={["operatore"]}>
@@ -127,6 +161,14 @@ export default function App() {
             element={
               <ProtectedRoute roles={["operatore"]}>
                 <NuovoRapporto />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/operatore/rapporti/:id"
+            element={
+              <ProtectedRoute roles={["operatore"]}>
+                <VisualizzaRapporto />
               </ProtectedRoute>
             }
           />

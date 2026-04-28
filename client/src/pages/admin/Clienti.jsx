@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../../components/api";
+import { Card, Button, AddClientCard, InfoSection } from "../../components/UI";
 
 export default function Clienti() {
   const [clienti, setClienti] = useState([]);
@@ -79,23 +80,22 @@ export default function Clienti() {
       <section>
         <h2>Clienti</h2>
         {editingId ? (
-          <form onSubmit={submit} className="card form-grid">
-            <input placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-            <input placeholder="Telefono" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
-            <input placeholder="Indirizzo" value={form.indirizzo} onChange={(e) => setForm({ ...form, indirizzo: e.target.value })} />
-            <textarea placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-            {error ? <p className="error">{error}</p> : null}
-            <div className="inline-actions">
-              <button type="submit">Salva Cliente</button>
-              <button type="button" className="secondary-button" onClick={resetForm}>Annulla</button>
-            </div>
-          </form>
+          <Card className="form-grid">
+            <form onSubmit={submit} style={{ display: "contents" }}>
+              <input placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
+              <input placeholder="Telefono" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+              <input placeholder="Indirizzo" value={form.indirizzo} onChange={(e) => setForm({ ...form, indirizzo: e.target.value })} />
+              <textarea placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+              {error ? <p className="error">{error}</p> : null}
+              <div className="inline-actions">
+                <Button variant="primary" type="submit">Salva Cliente</Button>
+                <Button variant="secondary" type="button" onClick={resetForm}>Annulla</Button>
+              </div>
+            </form>
+          </Card>
         ) : (
           <div className="clients-grid">
-            <button className="card add-client-card" onClick={() => startEdit({})}>
-              <div className="add-icon">+</div>
-              <p>Aggiungi Cliente</p>
-            </button>
+            <AddClientCard onClick={() => startEdit({})} />
           </div>
         )}
       </section>
@@ -106,21 +106,23 @@ export default function Clienti() {
     <section>
       <h2>Clienti</h2>
       {editingId ? (
-        <form onSubmit={submit} className="card form-grid">
-          <input placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-          <input placeholder="Telefono" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
-          <input placeholder="Indirizzo" value={form.indirizzo} onChange={(e) => setForm({ ...form, indirizzo: e.target.value })} />
-          <textarea placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-          {error ? <p className="error">{error}</p> : null}
-          <div className="inline-actions">
-            <button type="submit">Salva Cliente</button>
-            <button type="button" className="secondary-button" onClick={resetForm}>Annulla</button>
-          </div>
-        </form>
+        <Card className="form-grid">
+          <form onSubmit={submit} style={{ display: "contents" }}>
+            <input placeholder="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
+            <input placeholder="Telefono" value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+            <input placeholder="Indirizzo" value={form.indirizzo} onChange={(e) => setForm({ ...form, indirizzo: e.target.value })} />
+            <textarea placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            {error ? <p className="error">{error}</p> : null}
+            <div className="inline-actions">
+              <Button variant="primary" type="submit">Salva Cliente</Button>
+              <Button variant="secondary" type="button" onClick={resetForm}>Annulla</Button>
+            </div>
+          </form>
+        </Card>
       ) : (
         <div className="clients-grid">
           {clienti.map((cliente) => (
-            <article className="card client-card" key={cliente.id}>
+            <Card className="client-card" key={cliente.id}>
               <div className="card-header">
                 <h3>{cliente.nome}</h3>
                 <div className="menu-wrapper">
@@ -134,16 +136,13 @@ export default function Clienti() {
                   )}
                 </div>
               </div>
-              <p className="info">Telefono: {cliente.telefono || "-"}</p>
-              <p className="info">Indirizzo: {cliente.indirizzo || "-"}</p>
-              {cliente.note && <p className="info">Note: {cliente.note}</p>}
-            </article>
+              <InfoSection label="Telefono" value={cliente.telefono} />
+              <InfoSection label="Indirizzo" value={cliente.indirizzo} />
+              {cliente.note && <InfoSection label="Note" value={cliente.note} />}
+            </Card>
           ))}
 
-          <button className="card add-client-card" onClick={() => startEdit({})}>
-            <div className="add-icon">+</div>
-            <p>Aggiungi Cliente</p>
-          </button>
+          <AddClientCard onClick={() => startEdit({})} />
         </div>
       )}
     </section>
